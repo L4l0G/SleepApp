@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "8582747d-6ff5-4d89-b6ac-a7e3bf92a128"
+      }
+    },
+    "android": {
+      "package": "com.l4l0g.sleepapp"
+    }
+  }
+}
