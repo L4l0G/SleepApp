@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput, Alert,
+  StyleSheet, Modal, Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, radius, spacing } from '../utils/theme';
@@ -10,7 +10,7 @@ import {
   loadProgress, saveProgress,
   loadSleepLog, saveSleepLog,
   loadStartDate, saveStartDate,
-  loadPerfil,
+  loadPerfil, CYCLE_DAYS,
 } from '../utils/storage';
 import { RUTINAS } from '../data/routines';
 
@@ -24,8 +24,8 @@ function toKey(date) {
   return date.toISOString().slice(0, 10);
 }
 
-function build14Days(startDate) {
-  return Array.from({ length: 14 }, (_, i) => {
+function buildCycleDays(startDate) {
+  return Array.from({ length: CYCLE_DAYS }, (_, i) => {
     const d = new Date(startDate);
     d.setDate(d.getDate() + i);
     return d;
@@ -63,7 +63,7 @@ const bar = StyleSheet.create({
   dayLabel: { fontSize: 8,  color: colors.textMuted, marginTop: 1 },
 });
 
-// ─── Celda de día ────────────────────────────────────────────────────────────
+// ─── Celda de día ─────────────────────────────────────────────────────────────
 
 function DayCell({ date, isToday, isFuture, isDone, onPress }) {
   return (
@@ -80,59 +80,21 @@ function DayCell({ date, isToday, isFuture, isDone, onPress }) {
       <Text style={[s.dayNum, isDone && s.dayNumDone, isFuture && s.dayNumFuture]}>
         {date.getDate()}
       </Text>
-      {isDone   && <Text style={s.checkmark}>✓</Text>}
-      {isToday  && !isDone && <View style={s.todayDot} />}
+      {isDone  && <Text style={s.checkmark}>✓</Text>}
+      {isToday && !isDone && <View style={s.todayDot} />}
     </TouchableOpacity>
   );
 }
 
-// ─── Fila de semana ───────────────────────────────────────────────────────────
-
-function WeekRow({ days14, weekIdx, today, progress, onToggle }) {
-  const startSlice  = weekIdx * 7;
-  const slice       = days14.slice(startSlice, startSlice + 7);
-  const todayKey    = toKey(today);
-  const firstOffset = weekIdx === 0 ? weekDayIndex(slice[0]) : 0;
-
-  return (
-    <View>
-      <View style={s.weekHead}>
-        {DAYS_HEAD.map(d => (
-          <Text key={d} style={s.weekHeadText}>{d}</Text>
-        ))}
-      </View>
-      <View style={s.weekGrid}>
-        {Array.from({ length: firstOffset }).map((_, i) => (
-          <View key={`e-${i}`} style={s.dayCellEmpty} />
-        ))}
-        {slice.map((date, i) => {
-          const key     = toKey(date);
-          const isToday = key === todayKey;
-          const isFuture= date > today && !isToday;
-          const idx     = startSlice + i;
-          return (
-            <DayCell
-              key={key} date={date}
-              isToday={isToday} isFuture={isFuture}
-              isDone={progress[idx]}
-              onPress={() => onToggle(idx)}
-            />
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-// ─── Banner: período finalizado ───────────────────────────────────────────────
+// ─── Banner: ciclo finalizado ─────────────────────────────────────────────────
 
 function FinishedBanner({ onVerResumen }) {
   return (
     <View style={s.finishedBanner}>
       <Text style={s.finishedEmoji}>🎉</Text>
-      <Text style={s.finishedTitle}>¡Completaste los 14 días!</Text>
+      <Text style={s.finishedTitle}>¡Completaste la semana!</Text>
       <Text style={s.finishedSub}>
-        Revisa tu resumen, compara tu perfil y comienza un nuevo ciclo con una rutina actualizada.
+        Revisa tu resumen, compara tu perfil y comienza una nueva semana con una rutina actualizada.
       </Text>
       <TouchableOpacity style={s.finishedBtn} onPress={onVerResumen} activeOpacity={0.85}>
         <Text style={s.finishedBtnText}>Ver mi resumen y reiniciar →</Text>
@@ -144,11 +106,13 @@ function FinishedBanner({ onVerResumen }) {
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 
 export default function ProgresoScreen({ navigation }) {
-  const [progress,  setProgress]  = useState(new Array(14).fill(false));
-  const [sleepLog,  setSleepLog]  = useState(new Array(14).fill(null));
+  const [progress,  setProgress]  = useState(new Array(CYCLE_DAYS).fill(false));
+  const [sleepLog,  setSleepLog]  = useState(new Array(CYCLE_DAYS).fill(null));
   const [perfil,    setPerfil]    = useState(null);
   const [startDate, setStartDate] = useState(null);
-  const [logInput,  setLogInput]  = useState('');
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerHours,   setPickerHours]   = useState(7);
+  const [pickerMins,    setPickerMins]    = useState(0);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -174,14 +138,12 @@ export default function ProgresoScreen({ navigation }) {
     }, [])
   );
 
-  const days14   = startDate ? build14Days(startDate) : [];
-  const todayKey = toKey(today);
+  const cycleDays  = startDate ? buildCycleDays(startDate) : [];
+  const todayKey   = toKey(today);
+  const lastDay    = cycleDays.length === CYCLE_DAYS ? cycleDays[CYCLE_DAYS - 1] : null;
+  const cycleFinished = lastDay ? today > lastDay : false;
 
-  // ¿Terminaron los 14 días? (hoy es posterior al último día)
-  const lastDay      = days14.length === 14 ? days14[13] : null;
-  const cycleFinished= lastDay ? today > lastDay : false;
-
-  const todayIdx       = days14.findIndex(d => toKey(d) === todayKey);
+  const todayIdx       = cycleDays.findIndex(d => toKey(d) === todayKey);
   const activeTodayIdx = todayIdx === -1 ? null : todayIdx;
 
   const toggleDay = async (idx) => {
@@ -191,29 +153,25 @@ export default function ProgresoScreen({ navigation }) {
     await saveProgress(updated);
   };
 
-  const logSleep = async () => {
-    const h = parseFloat(logInput);
-    if (!h || h <= 0 || h > 14) {
-      Alert.alert('Valor inválido', 'Ingresa un número entre 1 y 14.');
-      return;
-    }
+  const confirmSleep = async () => {
     if (activeTodayIdx === null) {
-      Alert.alert('Fuera del período', 'Hoy no está dentro de tus 14 días.');
+      Alert.alert('Fuera del período', 'Hoy no está dentro de tu semana de seguimiento.');
       return;
     }
+    const h = parseFloat((pickerHours + pickerMins / 60).toFixed(2));
     const updated = [...sleepLog];
     updated[activeTodayIdx] = h;
     setSleepLog(updated);
     await saveSleepLog(updated);
-    setLogInput('');
+    setPickerVisible(false);
   };
 
   // Métricas
   const done = progress.filter(Boolean).length;
-  const pct  = Math.round((done / 14) * 100);
+  const pct  = Math.round((done / CYCLE_DAYS) * 100);
 
   let racha = 0;
-  const baseIdx = activeTodayIdx !== null ? activeTodayIdx : 13;
+  const baseIdx = activeTodayIdx !== null ? activeTodayIdx : CYCLE_DAYS - 1;
   for (let i = baseIdx; i >= 0; i--) { if (progress[i]) racha++; else break; }
 
   const avgSleep = (() => {
@@ -223,26 +181,29 @@ export default function ProgresoScreen({ navigation }) {
   })();
 
   const statusColor = pct >= 70 ? colors.success : pct >= 40 ? colors.warn : colors.danger;
-  const statusLabel = pct >= 70 ? '¡Excelente progreso!' : pct >= 40 ? 'Buen esfuerzo' : 'Apenas iniciando';
+  const statusLabel = pct >= 70 ? '¡Excelente semana!' : pct >= 40 ? 'Buen esfuerzo' : 'Apenas iniciando';
   const rutina      = perfil ? RUTINAS[perfil] : null;
 
+  // Período en texto
   const periodoLabel = (() => {
-    if (!startDate || days14.length < 14) return '';
-    const end = days14[13];
+    if (!startDate || cycleDays.length < CYCLE_DAYS) return '';
+    const end = cycleDays[CYCLE_DAYS - 1];
     const sm  = MONTHS_ES[startDate.getMonth()];
     const em  = MONTHS_ES[end.getMonth()];
     if (sm === em) return `${startDate.getDate()} – ${end.getDate()} de ${sm} ${end.getFullYear()}`;
     return `${startDate.getDate()} ${sm} – ${end.getDate()} ${em} ${end.getFullYear()}`;
   })();
 
-  const semanaLabel = (() => {
+  const diaLabel = (() => {
     if (!startDate) return '';
-    const diffDays = Math.floor((today - startDate) / 86400000);
-    if (diffDays < 0)  return 'El período aún no comienza';
-    if (diffDays < 7)  return `Semana 1 · Día ${diffDays + 1}`;
-    if (diffDays < 14) return `Semana 2 · Día ${diffDays + 1}`;
-    return 'Período de 14 días completado ✓';
+    const diff = Math.floor((today - startDate) / 86400000);
+    if (diff < 0)            return 'El período aún no comienza';
+    if (diff < CYCLE_DAYS)   return `Semana en curso · Día ${diff + 1} de ${CYCLE_DAYS}`;
+    return 'Semana completada ✓';
   })();
+
+  // Offset para alinear la semana al día correcto (Lu-Do)
+  const firstOffset = cycleDays.length > 0 ? weekDayIndex(cycleDays[0]) : 0;
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
@@ -263,8 +224,8 @@ export default function ProgresoScreen({ navigation }) {
         <View style={s.trackBg}>
           <View style={[s.trackFill, { width: `${pct}%`, backgroundColor: statusColor }]} />
         </View>
-        <Text style={s.pctSub}>{done} de 14 días completados</Text>
-        {semanaLabel ? <Text style={s.semanaLabel}>{semanaLabel}</Text> : null}
+        <Text style={s.pctSub}>{done} de {CYCLE_DAYS} días completados</Text>
+        {diaLabel ? <Text style={s.semanaLabel}>{diaLabel}</Text> : null}
       </View>
 
       {/* Métricas */}
@@ -278,65 +239,193 @@ export default function ProgresoScreen({ navigation }) {
           <Text style={s.metricLabel}>Promedio{'\n'}sueño (h)</Text>
         </View>
         <View style={s.metric}>
-          <Text style={s.metricVal}>{Math.max(0, 14 - done)}</Text>
+          <Text style={s.metricVal}>{Math.max(0, CYCLE_DAYS - done)}</Text>
           <Text style={s.metricLabel}>Días{'\n'}restantes</Text>
         </View>
       </View>
 
-      {/* Calendario */}
-      {days14.length > 0 && (
+      {/* Calendario semanal */}
+      {cycleDays.length > 0 && (
         <>
           <View style={s.calHeader}>
-            <Text style={s.sectionLabel}>Calendario</Text>
+            <Text style={s.sectionLabel}>Esta semana</Text>
             <Text style={s.periodoText}>{periodoLabel}</Text>
           </View>
 
-          <Text style={s.weekTitle}>Semana 1</Text>
-          <WeekRow days14={days14} weekIdx={0} today={today} progress={progress} onToggle={toggleDay} />
+          {/* Encabezados Lu-Do */}
+          <View style={s.weekHead}>
+            {DAYS_HEAD.map(d => (
+              <Text key={d} style={s.weekHeadText}>{d}</Text>
+            ))}
+          </View>
 
-          <Text style={[s.weekTitle, { marginTop: spacing.md }]}>Semana 2</Text>
-          <WeekRow days14={days14} weekIdx={1} today={today} progress={progress} onToggle={toggleDay} />
+          {/* Celdas de la semana */}
+          <View style={s.weekGrid}>
+            {Array.from({ length: firstOffset }).map((_, i) => (
+              <View key={`empty-${i}`} style={s.dayCellEmpty} />
+            ))}
+            {cycleDays.map((date, idx) => {
+              const key      = toKey(date);
+              const isToday  = key === todayKey;
+              const isFuture = date > today && !isToday;
+              return (
+                <DayCell
+                  key={key} date={date}
+                  isToday={isToday} isFuture={isFuture}
+                  isDone={progress[idx]}
+                  onPress={() => toggleDay(idx)}
+                />
+              );
+            })}
+          </View>
         </>
       )}
 
-      {/* Gráfica */}
-      <Text style={[s.sectionLabel, { marginTop: spacing.lg }]}>Horas de sueño registradas</Text>
+      {/* Gráfica de sueño */}
+      <Text style={[s.sectionLabel, { marginTop: spacing.lg }]}>Horas de sueño esta semana</Text>
       <View style={s.chartRow}>
         {sleepLog.map((h, i) => {
-          const date    = days14[i];
-          const isToday = date ? toKey(date) === todayKey : false;
-          const dayLabel= date ? `${date.getDate()}/${date.getMonth() + 1}` : `D${i + 1}`;
+          const date     = cycleDays[i];
+          const isToday  = date ? toKey(date) === todayKey : false;
+          const dayLabel = date
+            ? DAYS_HEAD[(date.getDay() + 6) % 7]
+            : `D${i + 1}`;
           return <SleepBar key={i} hours={h} isToday={isToday} dayLabel={dayLabel} />;
         })}
       </View>
 
-      {/* Registro diario — oculto si el ciclo terminó */}
+      {/* Registro diario */}
       {!cycleFinished && (
         <View style={s.logCard}>
           <Text style={s.logTitle}>
             Registrar horas dormidas hoy
-            {activeTodayIdx !== null ? ` · ${today.getDate()} de ${MONTHS_ES[today.getMonth()]}` : ''}
+            {activeTodayIdx !== null
+              ? ` · ${today.getDate()} de ${MONTHS_ES[today.getMonth()]}`
+              : ''}
           </Text>
-          <View style={s.logRow}>
-            <TextInput
-              style={s.logInput}
-              value={logInput}
-              onChangeText={setLogInput}
-              placeholder="ej. 7.5"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="decimal-pad"
-            />
-            <TouchableOpacity style={s.logBtn} onPress={logSleep} activeOpacity={0.85}>
-              <Text style={s.logBtnText}>Guardar</Text>
-            </TouchableOpacity>
-          </View>
+
+          {/* Botón que abre el picker */}
+          <TouchableOpacity
+            style={s.pickerTrigger}
+            onPress={() => {
+              if (activeTodayIdx !== null && sleepLog[activeTodayIdx] !== null) {
+                const h   = sleepLog[activeTodayIdx];
+                const hrs = Math.floor(h);
+                const mns = Math.round((h - hrs) * 60);
+                setPickerHours(hrs);
+                setPickerMins(mns);
+              }
+              setPickerVisible(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={s.pickerTriggerIcon}>🕐</Text>
+            <View>
+              <Text style={s.pickerTriggerLabel}>
+                {activeTodayIdx !== null && sleepLog[activeTodayIdx] !== null
+                  ? `${Math.floor(sleepLog[activeTodayIdx])}h ${Math.round((sleepLog[activeTodayIdx] % 1) * 60)}min`
+                  : 'Seleccionar horas'}
+              </Text>
+              <Text style={s.pickerTriggerSub}>Toca para cambiar</Text>
+            </View>
+            <Text style={s.pickerChevron}>›</Text>
+          </TouchableOpacity>
+
           {activeTodayIdx !== null && sleepLog[activeTodayIdx] !== null && (
-            <Text style={s.loggedText}>✓ Registrado hoy: {sleepLog[activeTodayIdx]}h</Text>
+            <Text style={s.loggedText}>
+              ✓ Registrado: {Math.floor(sleepLog[activeTodayIdx])}h {Math.round((sleepLog[activeTodayIdx] % 1) * 60)}min
+            </Text>
           )}
         </View>
       )}
 
-      {/* Botón resumen siempre visible si ciclo terminó */}
+      {/* Modal picker de horas */}
+      <Modal
+        visible={pickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPickerVisible(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalCard}>
+            <Text style={s.modalTitle}>¿Cuánto dormiste anoche?</Text>
+
+            <View style={s.pickerRow}>
+              {/* Columna horas */}
+              <View style={s.pickerCol}>
+                <Text style={s.pickerColLabel}>Horas</Text>
+                <ScrollView
+                  style={s.pickerScroll}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingVertical: 60 }}
+                >
+                  {Array.from({ length: 13 }, (_, i) => i + 1).map(h => (
+                    <TouchableOpacity
+                      key={h}
+                      style={[s.pickerItem, pickerHours === h && s.pickerItemSelected]}
+                      onPress={() => setPickerHours(h)}
+                    >
+                      <Text style={[s.pickerItemText, pickerHours === h && s.pickerItemTextSelected]}>
+                        {h}h
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Separador */}
+              <Text style={s.pickerSep}>:</Text>
+
+              {/* Columna minutos */}
+              <View style={s.pickerCol}>
+                <Text style={s.pickerColLabel}>Minutos</Text>
+                <ScrollView
+                  style={s.pickerScroll}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={{ paddingVertical: 60 }}
+                >
+                  {[0, 15, 30, 45].map(m => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[s.pickerItem, pickerMins === m && s.pickerItemSelected]}
+                      onPress={() => setPickerMins(m)}
+                    >
+                      <Text style={[s.pickerItemText, pickerMins === m && s.pickerItemTextSelected]}>
+                        {String(m).padStart(2, '0')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Previsualización */}
+            <View style={s.previewRow}>
+              <Text style={s.previewText}>
+                {pickerHours}h {String(pickerMins).padStart(2, '0')}min
+              </Text>
+            </View>
+
+            {/* Botones */}
+            <View style={s.modalBtns}>
+              <TouchableOpacity
+                style={s.modalBtnSecondary}
+                onPress={() => setPickerVisible(false)}
+              >
+                <Text style={s.modalBtnSecondaryText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.modalBtnPrimary}
+                onPress={confirmSleep}
+              >
+                <Text style={s.modalBtnPrimaryText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Botón resumen si ciclo terminó */}
       {cycleFinished && (
         <TouchableOpacity
           style={s.resumenBtn}
@@ -353,19 +442,19 @@ export default function ProgresoScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  scroll:     { flex: 1, backgroundColor: colors.bg },
-  container:  { padding: spacing.md },
+  scroll:    { flex: 1, backgroundColor: colors.bg },
+  container: { padding: spacing.md },
 
   finishedBanner: {
     backgroundColor: colors.bgCard, borderRadius: radius.xl,
     borderWidth: 1, borderColor: colors.accent + '55',
     padding: spacing.lg, alignItems: 'center', marginBottom: spacing.md,
   },
-  finishedEmoji: { fontSize: 48, marginBottom: 8 },
-  finishedTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
-  finishedSub:   { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: spacing.md },
-  finishedBtn:   { backgroundColor: colors.accent, borderRadius: radius.lg, paddingVertical: 12, paddingHorizontal: 24 },
-  finishedBtnText:{ color: '#fff', fontWeight: '700', fontSize: 14 },
+  finishedEmoji:   { fontSize: 48, marginBottom: 8 },
+  finishedTitle:   { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 },
+  finishedSub:     { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: spacing.md },
+  finishedBtn:     { backgroundColor: colors.accent, borderRadius: radius.lg, paddingVertical: 12, paddingHorizontal: 24 },
+  finishedBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   summaryCard: {
     backgroundColor: colors.bgCard, borderRadius: radius.xl,
@@ -382,20 +471,19 @@ const s = StyleSheet.create({
   pctSub:      { fontSize: 13, color: colors.textSecondary, marginTop: 6 },
   semanaLabel: { fontSize: 12, color: colors.accent, marginTop: 6, fontWeight: '500' },
 
-  metricRow:   { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  metric:      { flex: 1, backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  metricRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  metric:    { flex: 1, backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
   metricVal:   { fontSize: 24, fontWeight: '700', color: colors.textPrimary },
   metricLabel: { fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 2, lineHeight: 15 },
 
-  calHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  sectionLabel:{ fontSize: 12, fontWeight: '700', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' },
-  periodoText: { fontSize: 11, color: colors.textSecondary },
-  weekTitle:   { fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 6, marginTop: 4 },
+  calHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' },
+  periodoText:  { fontSize: 11, color: colors.textSecondary },
 
-  weekHead:    { flexDirection: 'row', marginBottom: 4 },
-  weekHeadText:{ flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '600', color: colors.textMuted },
-  weekGrid:    { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCellEmpty:{ width: '14.28%', aspectRatio: 1 },
+  weekHead:     { flexDirection: 'row', marginBottom: 4 },
+  weekHeadText: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '600', color: colors.textMuted },
+  weekGrid:     { flexDirection: 'row', flexWrap: 'wrap', marginBottom: spacing.md },
+  dayCellEmpty: { width: '14.28%', aspectRatio: 1 },
 
   dayCell: {
     width: '14.28%', aspectRatio: 1, borderRadius: radius.sm,
@@ -412,7 +500,7 @@ const s = StyleSheet.create({
   checkmark:     { fontSize: 9, color: colors.success },
   todayDot:      { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.accent, marginTop: 1 },
 
-  chartRow:    { flexDirection: 'row', height: 100, alignItems: 'flex-end', marginBottom: spacing.sm },
+  chartRow: { flexDirection: 'row', height: 100, alignItems: 'flex-end', marginBottom: spacing.sm },
 
   logCard: {
     backgroundColor: colors.bgCard, borderRadius: radius.lg,
@@ -436,4 +524,52 @@ const s = StyleSheet.create({
     padding: spacing.md, alignItems: 'center', marginTop: spacing.md,
   },
   resumenBtnText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
+
+  // Picker de horas
+  pickerTrigger: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.bgElevated, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.borderLight,
+    padding: spacing.md,
+  },
+  pickerTriggerIcon:  { fontSize: 28 },
+  pickerTriggerLabel: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
+  pickerTriggerSub:   { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  pickerChevron:      { fontSize: 24, color: colors.textMuted, marginLeft: 'auto' },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.bgCard, borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl, padding: spacing.lg,
+    paddingBottom: 36,
+  },
+  modalTitle: {
+    fontSize: 17, fontWeight: '700', color: colors.textPrimary,
+    textAlign: 'center', marginBottom: spacing.lg,
+  },
+
+  pickerRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+  pickerCol:     { alignItems: 'center', width: 110 },
+  pickerColLabel:{ fontSize: 12, fontWeight: '600', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  pickerScroll:  { height: 200, width: '100%' },
+  pickerItem: {
+    paddingVertical: 12, alignItems: 'center',
+    borderRadius: radius.md, marginBottom: 4,
+  },
+  pickerItemSelected:  { backgroundColor: colors.accentGlow, borderWidth: 1, borderColor: colors.accent },
+  pickerItemText:      { fontSize: 20, color: colors.textSecondary, fontWeight: '400' },
+  pickerItemTextSelected: { color: colors.accent, fontWeight: '700' },
+  pickerSep:     { fontSize: 28, color: colors.textMuted, marginTop: 28 },
+
+  previewRow:  { alignItems: 'center', marginVertical: spacing.md },
+  previewText: { fontSize: 32, fontWeight: '700', color: colors.textPrimary },
+
+  modalBtns:          { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  modalBtnSecondary:  { flex: 1, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.bgElevated, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  modalBtnSecondaryText: { color: colors.textSecondary, fontWeight: '600', fontSize: 15 },
+  modalBtnPrimary:    { flex: 1, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center' },
+  modalBtnPrimaryText:{ color: '#fff', fontWeight: '700', fontSize: 15 },
 });

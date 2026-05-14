@@ -9,7 +9,11 @@ const KEYS = {
   START_DATE:  'sleepapp_start_date',
   PREV_PERFIL: 'sleepapp_prev_perfil',
   HISTORY:     'sleepapp_history',
+  NOTIF_ID:    'sleepapp_notif_id',
 };
+
+// Ciclo semanal
+export const CYCLE_DAYS = 7;
 
 export async function saveForm(form) {
   await AsyncStorage.setItem(KEYS.FORM, JSON.stringify(form));
@@ -38,7 +42,7 @@ export async function saveProgress(progress) {
 }
 export async function loadProgress() {
   const raw = await AsyncStorage.getItem(KEYS.PROGRESS);
-  return raw ? JSON.parse(raw) : new Array(14).fill(false);
+  return raw ? JSON.parse(raw) : new Array(CYCLE_DAYS).fill(false);
 }
 
 export async function saveSleepLog(log) {
@@ -46,7 +50,7 @@ export async function saveSleepLog(log) {
 }
 export async function loadSleepLog() {
   const raw = await AsyncStorage.getItem(KEYS.SLEEP_LOG);
-  return raw ? JSON.parse(raw) : new Array(14).fill(null);
+  return raw ? JSON.parse(raw) : new Array(CYCLE_DAYS).fill(null);
 }
 
 export async function saveStartDate(date) {
@@ -56,9 +60,15 @@ export async function loadStartDate() {
   return await AsyncStorage.getItem(KEYS.START_DATE);
 }
 
-// Guarda un historial de ciclos anteriores
+export async function saveNotifId(id) {
+  await AsyncStorage.setItem(KEYS.NOTIF_ID, String(id));
+}
+export async function loadNotifId() {
+  return await AsyncStorage.getItem(KEYS.NOTIF_ID);
+}
+
 export async function appendHistory(entry) {
-  const raw = await AsyncStorage.getItem(KEYS.HISTORY);
+  const raw  = await AsyncStorage.getItem(KEYS.HISTORY);
   const hist = raw ? JSON.parse(raw) : [];
   hist.push(entry);
   await AsyncStorage.setItem(KEYS.HISTORY, JSON.stringify(hist));
@@ -68,7 +78,6 @@ export async function loadHistory() {
   return raw ? JSON.parse(raw) : [];
 }
 
-// Limpia solo el ciclo actual (conserva historial y form)
 export async function clearCurrentCycle() {
   await AsyncStorage.multiRemove([
     KEYS.PROGRESS,

@@ -2,11 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, TextInput, Alert, Platform,
+  StyleSheet, TextInput, Alert,
 } from 'react-native';
 import { colors, radius, spacing } from '../utils/theme';
 import { calcPerfil } from '../data/routines';
-import { saveForm, savePerfil, loadForm, saveStartDate } from '../utils/storage';
+import {
+  saveForm, savePerfil, loadForm,
+  saveStartDate, CYCLE_DAYS,
+} from '../utils/storage';
+import {
+  scheduleWeeklyNotification,
+  scheduleDailyReminders,
+  requestNotificationPermissions,
+} from '../utils/notifications';
 
 const OPTIONS = {
   nivelAcad: [
@@ -69,10 +77,8 @@ function SelectGroup({ label, field, options, value, onChange }) {
 }
 
 function SliderRow({ label, value, min, max, step, format, onChange }) {
-  // Simulamos slider con botones +/- para compatibilidad máxima
   const decrement = () => onChange(Math.max(min, parseFloat((value - step).toFixed(1))));
   const increment = () => onChange(Math.min(max, parseFloat((value + step).toFixed(1))));
-
   return (
     <View style={s.formGroup}>
       <Text style={s.label}>{label}</Text>
@@ -85,7 +91,6 @@ function SliderRow({ label, value, min, max, step, format, onChange }) {
           <Text style={s.sliderBtnText}>+</Text>
         </TouchableOpacity>
       </View>
-      {/* Barra visual */}
       <View style={s.trackBg}>
         <View style={[s.trackFill, { width: `${((value - min) / (max - min)) * 100}%` }]} />
       </View>
@@ -94,15 +99,15 @@ function SliderRow({ label, value, min, max, step, format, onChange }) {
 }
 
 const INITIAL_FORM = {
-  nivelAcad: '',
-  horas: 6,
-  despFeel: '',
-  despNoche: '',
-  horaAcostarse: '00:00',
-  pantallas: '',
-  estres: 5,
-  cafeina: '',
-  irregular: '',
+  nivelAcad:      '',
+  horas:          6,
+  despFeel:       '',
+  despNoche:      '',
+  horaAcostarse:  '00:00',
+  pantallas:      '',
+  estres:         5,
+  cafeina:        '',
+  irregular:      '',
 };
 
 export default function CuestionarioScreen({ navigation }) {
@@ -116,16 +121,27 @@ export default function CuestionarioScreen({ navigation }) {
 
   const handleSubmit = async () => {
     const required = ['nivelAcad', 'despFeel', 'despNoche', 'pantallas', 'cafeina', 'irregular'];
-    const missing = required.filter(k => !form[k]);
+    const missing  = required.filter(k => !form[k]);
     if (missing.length > 0) {
       Alert.alert('Campos incompletos', 'Por favor responde todas las preguntas.');
       return;
     }
 
-    const perfil = calcPerfil(form);
+    const perfil   = calcPerfil(form);
+    const now      = new Date();
+    now.setHours(0, 0, 0, 0);
+
     await saveForm(form);
     await savePerfil(perfil);
-    await saveStartDate(new Date().toISOString());
+    await saveStartDate(now.toISOString());
+
+    // Solicitar permisos y programar notificaciones del ciclo
+    const granted = await requestNotificationPermissions();
+    if (granted) {
+      await scheduleWeeklyNotification(now);
+      await scheduleDailyReminders(now);
+    }
+
     navigation.navigate('Rutina', { form, perfil });
   };
 
@@ -135,36 +151,22 @@ export default function CuestionarioScreen({ navigation }) {
         <Text style={s.heroEmoji}>🌙</Text>
         <Text style={s.heroTitle}>Cuestionario de sueño</Text>
         <Text style={s.heroSub}>Para estudiantes universitarios y de posgrado</Text>
+        <View style={s.cycleBadge}>
+          <Text style={s.cycleBadgeText}>🔄 Ciclo semanal · {CYCLE_DAYS} días</Text>
+        </View>
       </View>
 
-      {/* Nivel académico */}
-      <SelectGroup
-        label="Nivel académico"
-        field="nivelAcad"
-        options={OPTIONS.nivelAcad}
-        value={form.nivelAcad}
-        onChange={setField}
-      />
+      <SelectGroup label="Nivel académico" field="nivelAcad" options={OPTIONS.nivelAcad} value={form.nivelAcad} onChange={setField} />
 
-      {/* Horas de sueño */}
       <SliderRow
         label="Horas de sueño promedio por noche"
-        value={form.horas}
-        min={2} max={12} step={0.5}
+        value={form.horas} min={2} max={12} step={0.5}
         format={v => `${parseFloat(v).toFixed(1)} h`}
         onChange={v => setField('horas', v)}
       />
 
-      {/* Cómo te sientes */}
-      <SelectGroup
-        label="¿Cómo te sientes al despertar?"
-        field="despFeel"
-        options={OPTIONS.despFeel}
-        value={form.despFeel}
-        onChange={setField}
-      />
+      <SelectGroup label="¿Cómo te sientes al despertar?" field="despFeel" options={OPTIONS.despFeel} value={form.despFeel} onChange={setField} />
 
-      {/* Hora de dormir */}
       <View style={s.formGroup}>
         <Text style={s.label}>Hora aproximada a la que te duermes</Text>
         <TextInput
@@ -177,50 +179,18 @@ export default function CuestionarioScreen({ navigation }) {
         />
       </View>
 
-      {/* Despertar nocturno */}
-      <SelectGroup
-        label="¿Con qué frecuencia te despiertas en la noche?"
-        field="despNoche"
-        options={OPTIONS.despNoche}
-        value={form.despNoche}
-        onChange={setField}
-      />
+      <SelectGroup label="¿Con qué frecuencia te despiertas en la noche?" field="despNoche" options={OPTIONS.despNoche} value={form.despNoche} onChange={setField} />
+      <SelectGroup label="Uso de pantallas antes de dormir" field="pantallas" options={OPTIONS.pantallas} value={form.pantallas} onChange={setField} />
 
-      {/* Pantallas */}
-      <SelectGroup
-        label="Uso de pantallas antes de dormir"
-        field="pantallas"
-        options={OPTIONS.pantallas}
-        value={form.pantallas}
-        onChange={setField}
-      />
-
-      {/* Estrés */}
       <SliderRow
         label="Nivel de estrés académico"
-        value={form.estres}
-        min={1} max={10} step={1}
+        value={form.estres} min={1} max={10} step={1}
         format={v => `${v} / 10`}
         onChange={v => setField('estres', v)}
       />
 
-      {/* Cafeína */}
-      <SelectGroup
-        label="¿Consumes cafeína (café, energéticas, etc.)?"
-        field="cafeina"
-        options={OPTIONS.cafeina}
-        value={form.cafeina}
-        onChange={setField}
-      />
-
-      {/* Irregularidad */}
-      <SelectGroup
-        label="¿Tienes horario irregular de sueño?"
-        field="irregular"
-        options={OPTIONS.irregular}
-        value={form.irregular}
-        onChange={setField}
-      />
+      <SelectGroup label="¿Consumes cafeína (café, energéticas, etc.)?" field="cafeina" options={OPTIONS.cafeina} value={form.cafeina} onChange={setField} />
+      <SelectGroup label="¿Tienes horario irregular de sueño?" field="irregular" options={OPTIONS.irregular} value={form.irregular} onChange={setField} />
 
       <TouchableOpacity style={s.submitBtn} onPress={handleSubmit} activeOpacity={0.85}>
         <Text style={s.submitText}>Ver mi rutina personalizada →</Text>
@@ -232,16 +202,18 @@ export default function CuestionarioScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: colors.bg },
+  scroll:    { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing.md },
 
-  hero: { alignItems: 'center', paddingVertical: spacing.xl },
+  hero:      { alignItems: 'center', paddingVertical: spacing.xl },
   heroEmoji: { fontSize: 48, marginBottom: 12 },
   heroTitle: { fontSize: 24, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
-  heroSub: { fontSize: 14, color: colors.textSecondary, marginTop: 6, textAlign: 'center' },
+  heroSub:   { fontSize: 14, color: colors.textSecondary, marginTop: 6, textAlign: 'center' },
+  cycleBadge:     { marginTop: 12, backgroundColor: colors.accentGlow, borderRadius: radius.full, paddingHorizontal: 16, paddingVertical: 5, borderWidth: 1, borderColor: colors.accentSoft },
+  cycleBadgeText: { fontSize: 12, color: colors.accent, fontWeight: '600' },
 
   formGroup: { marginBottom: spacing.lg },
-  label: { fontSize: 13, color: colors.textSecondary, marginBottom: spacing.sm, fontWeight: '500' },
+  label:     { fontSize: 13, color: colors.textSecondary, marginBottom: spacing.sm, fontWeight: '500' },
 
   option: {
     flexDirection: 'row', alignItems: 'center',
@@ -249,25 +221,18 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.bgCard, marginBottom: 6,
   },
-  optionSelected: { borderColor: colors.accent, backgroundColor: colors.accentGlow },
-  optionDot: {
-    width: 16, height: 16, borderRadius: 8,
-    borderWidth: 2, borderColor: colors.textMuted, marginRight: 10,
-  },
-  optionDotSelected: { borderColor: colors.accent, backgroundColor: colors.accent },
-  optionText: { fontSize: 14, color: colors.textSecondary, flex: 1 },
+  optionSelected:     { borderColor: colors.accent, backgroundColor: colors.accentGlow },
+  optionDot:          { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: colors.textMuted, marginRight: 10 },
+  optionDotSelected:  { borderColor: colors.accent, backgroundColor: colors.accent },
+  optionText:         { fontSize: 14, color: colors.textSecondary, flex: 1 },
   optionTextSelected: { color: colors.textPrimary },
 
-  sliderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  sliderBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.borderLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  sliderRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  sliderBtn:     { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.bgElevated, borderWidth: 1, borderColor: colors.borderLight, alignItems: 'center', justifyContent: 'center' },
   sliderBtnText: { color: colors.textPrimary, fontSize: 20, fontWeight: '300' },
-  sliderVal: { fontSize: 22, fontWeight: '600', color: colors.textPrimary, width: 80, textAlign: 'center' },
-  trackBg: { height: 6, backgroundColor: colors.bgElevated, borderRadius: 3, overflow: 'hidden' },
-  trackFill: { height: 6, backgroundColor: colors.accent, borderRadius: 3 },
+  sliderVal:     { fontSize: 22, fontWeight: '600', color: colors.textPrimary, width: 80, textAlign: 'center' },
+  trackBg:       { height: 6, backgroundColor: colors.bgElevated, borderRadius: 3, overflow: 'hidden' },
+  trackFill:     { height: 6, backgroundColor: colors.accent, borderRadius: 3 },
 
   textInput: {
     backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border,
@@ -275,9 +240,6 @@ const s = StyleSheet.create({
     color: colors.textPrimary, fontSize: 15,
   },
 
-  submitBtn: {
-    backgroundColor: colors.accent, borderRadius: radius.lg,
-    padding: spacing.md, alignItems: 'center', marginTop: spacing.md,
-  },
+  submitBtn:  { backgroundColor: colors.accent, borderRadius: radius.lg, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
   submitText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
