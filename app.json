@@ -6,7 +6,12 @@
       }
     },
     "android": {
-      "package": "com.l4l0g.sleepapp"
+      "package": "com.l4l0g.sleepapp",
+      "googleServicesFile": "./google-services.json"
+    },
+    "ios": {
+      "bundleIdentifier": "com.l4l0g.sleepapp",
+      "googleServicesFile": "./GoogleService-Info.plist"
     }
   }
 }

@@ -3,8 +3,9 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Text, View } from 'react-native';
+import { Text, View, TouchableOpacity } from 'react-native';
 import { colors } from '../utils/theme';
+import { useAuth } from '../context/AuthContext';
 
 import CuestionarioScreen from '../screens/CuestionarioScreen';
 import RutinaScreen       from '../screens/RutinaScreen';
@@ -29,9 +30,25 @@ function TabIcon({ emoji, label, focused }) {
   );
 }
 
+// Botón de logout en header
+function LogoutButton() {
+  const { logout } = useAuth();
+
+  return (
+    <TouchableOpacity
+      onPress={logout}
+      style={{ marginRight: 12 }}
+      activeOpacity={0.7}
+    >
+      <Text style={{ fontSize: 16, color: colors.accent }}>🚪</Text>
+    </TouchableOpacity>
+  );
+}
+
 const TAB_OPTS = {
   headerStyle:      { backgroundColor: colors.bg, borderBottomColor: colors.border, borderBottomWidth: 1 },
   headerTitleStyle: { color: colors.textPrimary, fontSize: 17, fontWeight: '600' },
+  headerRight: () => <LogoutButton />,
   tabBarStyle: {
     backgroundColor: colors.bgCard,
     borderTopColor: colors.border,
