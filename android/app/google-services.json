@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "726295863277",
+    "project_id": "sleepapp-3cefd",
+    "storage_bucket": "sleepapp-3cefd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:726295863277:android:7601dfc0f39c352d4611e4",
+        "android_client_info": {
+          "package_name": "com.l4l0g.sleepapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCohGlypElsD0FA5ETbhSJNLCJ896qjd4s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

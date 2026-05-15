@@ -2,11 +2,17 @@
   "expo": {
     "extra": {
       "eas": {
-        "projectId": "8582747d-6ff5-4d89-b6ac-a7e3bf92a128"
+        "projectId": "7014195b-bef9-4803-8086-5fa685e86338"
       }
     },
     "android": {
-      "package": "com.l4l0g.sleepapp"
-    }
+      "package": "com.l4l0g.sleepapp",
+      "googleServicesFile": "./google-services.json"
+    },
+    "ios": {
+      "bundleIdentifier": "com.l4l0g.sleepapp",
+      "googleServicesFile": "./GoogleService-Info.plist"
+    },
+    "owner": "hugocasens-organization"
   }
 }

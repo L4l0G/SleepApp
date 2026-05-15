@@ -15,6 +15,7 @@ import {
   scheduleDailyReminders,
   requestNotificationPermissions,
 } from '../utils/notifications';
+import { useAuth } from '../context/AuthContext';
 
 const OPTIONS = {
   nivelAcad: [
@@ -115,10 +116,15 @@ export default function CuestionarioScreen({ navigation }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerHours, setPickerHours] = useState(6);
   const [pickerMins, setPickerMins] = useState(0);
+  const { user } = useAuth();
 
   useEffect(() => {
+    // Siempre resetear primero — si el usuario no tiene datos guardados
+    // el formulario queda limpio en lugar de mostrar datos del usuario anterior
+    setForm(INITIAL_FORM);
+    if (!user) return;
     loadForm().then(saved => { if (saved) setForm(saved); });
-  }, []);
+  }, [user]);
 
   const setField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -153,7 +159,6 @@ export default function CuestionarioScreen({ navigation }) {
     await savePerfil(perfil);
     await saveStartDate(now.toISOString());
 
-    // Solicitar permisos y programar notificaciones del ciclo
     const granted = await requestNotificationPermissions();
     if (granted) {
       await scheduleWeeklyNotification(now);
@@ -221,7 +226,6 @@ export default function CuestionarioScreen({ navigation }) {
       <SelectGroup label="¿Consumes cafeína (café, energéticas, etc.)?" field="cafeina" options={OPTIONS.cafeina} value={form.cafeina} onChange={setField} />
       <SelectGroup label="¿Tienes horario irregular de sueño?" field="irregular" options={OPTIONS.irregular} value={form.irregular} onChange={setField} />
 
-      {/* Modal picker de horas de sueño */}
       <Modal
         visible={pickerVisible}
         transparent
@@ -233,7 +237,6 @@ export default function CuestionarioScreen({ navigation }) {
             <Text style={s.modalTitle}>¿Cuántas horas duermes?</Text>
 
             <View style={s.pickerRow}>
-              {/* Columna horas */}
               <View style={s.pickerCol}>
                 <Text style={s.pickerColLabel}>Horas</Text>
                 <ScrollView
@@ -255,10 +258,8 @@ export default function CuestionarioScreen({ navigation }) {
                 </ScrollView>
               </View>
 
-              {/* Separador */}
               <Text style={s.pickerSep}>:</Text>
 
-              {/* Columna minutos */}
               <View style={s.pickerCol}>
                 <Text style={s.pickerColLabel}>Minutos</Text>
                 <ScrollView
@@ -281,14 +282,12 @@ export default function CuestionarioScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Previsualización */}
             <View style={s.previewRow}>
               <Text style={s.previewText}>
                 {pickerHours}h {String(pickerMins).padStart(2, '0')}min
               </Text>
             </View>
 
-            {/* Botones */}
             <View style={s.modalBtns}>
               <TouchableOpacity
                 style={s.modalBtnSecondary}
@@ -358,7 +357,6 @@ const s = StyleSheet.create({
   submitBtn:  { backgroundColor: colors.accent, borderRadius: radius.lg, padding: spacing.md, alignItems: 'center', marginTop: spacing.md },
   submitText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
-  // Picker de horas
   pickerTrigger: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.bgElevated, borderRadius: radius.md,

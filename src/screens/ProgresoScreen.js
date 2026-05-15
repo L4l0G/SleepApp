@@ -1,5 +1,5 @@
 // src/screens/ProgresoScreen.js
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Modal, Alert,
@@ -13,6 +13,7 @@ import {
   loadPerfil, CYCLE_DAYS,
 } from '../utils/storage';
 import { RUTINAS } from '../data/routines';
+import { useAuth } from '../context/AuthContext';
 
 const MONTHS_ES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -35,8 +36,6 @@ function buildCycleDays(startDate) {
 function weekDayIndex(date) {
   return (date.getDay() + 6) % 7;
 }
-
-// ─── Barra de sueño ──────────────────────────────────────────────────────────
 
 function SleepBar({ hours, isToday, dayLabel }) {
   const maxH = 10;
@@ -63,8 +62,6 @@ const bar = StyleSheet.create({
   dayLabel: { fontSize: 8,  color: colors.textMuted, marginTop: 1 },
 });
 
-// ─── Celda de día ─────────────────────────────────────────────────────────────
-
 function DayCell({ date, isToday, isFuture, isDone, onPress }) {
   return (
     <TouchableOpacity
@@ -86,8 +83,6 @@ function DayCell({ date, isToday, isFuture, isDone, onPress }) {
   );
 }
 
-// ─── Banner: ciclo finalizado ─────────────────────────────────────────────────
-
 function FinishedBanner({ onVerResumen }) {
   return (
     <View style={s.finishedBanner}>
@@ -103,8 +98,6 @@ function FinishedBanner({ onVerResumen }) {
   );
 }
 
-// ─── Pantalla principal ───────────────────────────────────────────────────────
-
 export default function ProgresoScreen({ navigation }) {
   const [progress,  setProgress]  = useState(new Array(CYCLE_DAYS).fill(false));
   const [sleepLog,  setSleepLog]  = useState(new Array(CYCLE_DAYS).fill(null));
@@ -113,9 +106,20 @@ export default function ProgresoScreen({ navigation }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerHours,   setPickerHours]   = useState(7);
   const [pickerMins,    setPickerMins]    = useState(0);
+  const { user } = useAuth();
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Resetear estado cuando cambia el usuario (logout / cambio de cuenta)
+  useEffect(() => {
+    if (!user) {
+      setProgress(new Array(CYCLE_DAYS).fill(false));
+      setSleepLog(new Array(CYCLE_DAYS).fill(null));
+      setPerfil(null);
+      setStartDate(null);
+    }
+  }, [user]);
 
   useFocusEffect(
     useCallback(() => {
@@ -166,7 +170,6 @@ export default function ProgresoScreen({ navigation }) {
     setPickerVisible(false);
   };
 
-  // Métricas
   const done = progress.filter(Boolean).length;
   const pct  = Math.round((done / CYCLE_DAYS) * 100);
 
@@ -184,7 +187,6 @@ export default function ProgresoScreen({ navigation }) {
   const statusLabel = pct >= 70 ? '¡Excelente semana!' : pct >= 40 ? 'Buen esfuerzo' : 'Apenas iniciando';
   const rutina      = perfil ? RUTINAS[perfil] : null;
 
-  // Período en texto
   const periodoLabel = (() => {
     if (!startDate || cycleDays.length < CYCLE_DAYS) return '';
     const end = cycleDays[CYCLE_DAYS - 1];
@@ -202,18 +204,15 @@ export default function ProgresoScreen({ navigation }) {
     return 'Semana completada ✓';
   })();
 
-  // Offset para alinear la semana al día correcto (Lu-Do)
   const firstOffset = cycleDays.length > 0 ? weekDayIndex(cycleDays[0]) : 0;
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
 
-      {/* Banner de ciclo finalizado */}
       {cycleFinished && (
         <FinishedBanner onVerResumen={() => navigation.navigate('Resumen')} />
       )}
 
-      {/* Resumen */}
       <View style={s.summaryCard}>
         <View style={[s.statusPill, { backgroundColor: statusColor + '22' }]}>
           <View style={[s.statusDot, { backgroundColor: statusColor }]} />
@@ -228,7 +227,6 @@ export default function ProgresoScreen({ navigation }) {
         {diaLabel ? <Text style={s.semanaLabel}>{diaLabel}</Text> : null}
       </View>
 
-      {/* Métricas */}
       <View style={s.metricRow}>
         <View style={s.metric}>
           <Text style={s.metricVal}>{racha}</Text>
@@ -244,7 +242,6 @@ export default function ProgresoScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Calendario semanal */}
       {cycleDays.length > 0 && (
         <>
           <View style={s.calHeader}>
@@ -252,14 +249,12 @@ export default function ProgresoScreen({ navigation }) {
             <Text style={s.periodoText}>{periodoLabel}</Text>
           </View>
 
-          {/* Encabezados Lu-Do */}
           <View style={s.weekHead}>
             {DAYS_HEAD.map(d => (
               <Text key={d} style={s.weekHeadText}>{d}</Text>
             ))}
           </View>
 
-          {/* Celdas de la semana */}
           <View style={s.weekGrid}>
             {Array.from({ length: firstOffset }).map((_, i) => (
               <View key={`empty-${i}`} style={s.dayCellEmpty} />
@@ -281,7 +276,6 @@ export default function ProgresoScreen({ navigation }) {
         </>
       )}
 
-      {/* Gráfica de sueño */}
       <Text style={[s.sectionLabel, { marginTop: spacing.lg }]}>Horas de sueño esta semana</Text>
       <View style={s.chartRow}>
         {sleepLog.map((h, i) => {
@@ -294,7 +288,6 @@ export default function ProgresoScreen({ navigation }) {
         })}
       </View>
 
-      {/* Registro diario */}
       {!cycleFinished && (
         <View style={s.logCard}>
           <Text style={s.logTitle}>
@@ -304,7 +297,6 @@ export default function ProgresoScreen({ navigation }) {
               : ''}
           </Text>
 
-          {/* Botón que abre el picker */}
           <TouchableOpacity
             style={s.pickerTrigger}
             onPress={() => {
@@ -339,7 +331,6 @@ export default function ProgresoScreen({ navigation }) {
         </View>
       )}
 
-      {/* Modal picker de horas */}
       <Modal
         visible={pickerVisible}
         transparent
@@ -351,7 +342,6 @@ export default function ProgresoScreen({ navigation }) {
             <Text style={s.modalTitle}>¿Cuánto dormiste anoche?</Text>
 
             <View style={s.pickerRow}>
-              {/* Columna horas */}
               <View style={s.pickerCol}>
                 <Text style={s.pickerColLabel}>Horas</Text>
                 <ScrollView
@@ -373,10 +363,8 @@ export default function ProgresoScreen({ navigation }) {
                 </ScrollView>
               </View>
 
-              {/* Separador */}
               <Text style={s.pickerSep}>:</Text>
 
-              {/* Columna minutos */}
               <View style={s.pickerCol}>
                 <Text style={s.pickerColLabel}>Minutos</Text>
                 <ScrollView
@@ -399,14 +387,12 @@ export default function ProgresoScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Previsualización */}
             <View style={s.previewRow}>
               <Text style={s.previewText}>
                 {pickerHours}h {String(pickerMins).padStart(2, '0')}min
               </Text>
             </View>
 
-            {/* Botones */}
             <View style={s.modalBtns}>
               <TouchableOpacity
                 style={s.modalBtnSecondary}
@@ -425,7 +411,6 @@ export default function ProgresoScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Botón resumen si ciclo terminó */}
       {cycleFinished && (
         <TouchableOpacity
           style={s.resumenBtn}
@@ -525,7 +510,6 @@ const s = StyleSheet.create({
   },
   resumenBtnText: { color: colors.accent, fontWeight: '600', fontSize: 14 },
 
-  // Picker de horas
   pickerTrigger: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.bgElevated, borderRadius: radius.md,

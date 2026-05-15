@@ -4,24 +4,17 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import { saveNotifId, loadNotifId } from './storage';
 
-// Configurar cómo se muestran las notificaciones cuando la app está abierta
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,  // ✅ reemplaza shouldShowAlert
+    shouldShowList: true,    // ✅ nuevo requerido
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
 });
 
-/**
- * Solicita permisos de notificación al usuario.
- * Devuelve true si fueron concedidos.
- */
 export async function requestNotificationPermissions() {
-  if (!Device.isDevice) {
-    // En simulador/emulador no se pueden recibir notificaciones reales
-    return false;
-  }
+  if (!Device.isDevice) return false;
 
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
@@ -31,11 +24,8 @@ export async function requestNotificationPermissions() {
     finalStatus = status;
   }
 
-  if (finalStatus !== 'granted') {
-    return false;
-  }
+  if (finalStatus !== 'granted') return false;
 
-  // Canal de Android
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('sleep-reminders', {
       name: 'Recordatorios de sueño',
@@ -48,26 +38,16 @@ export async function requestNotificationPermissions() {
   return true;
 }
 
-/**
- * Programa una notificación semanal recurrente.
- * Se dispara 7 días después de la fecha de inicio del ciclo,
- * a las 9:00 AM, invitando a repetir el cuestionario.
- *
- * @param {Date} startDate - Fecha de inicio del ciclo actual
- */
 export async function scheduleWeeklyNotification(startDate) {
-  // Cancelar notificación anterior si existe
   await cancelWeeklyNotification();
 
   const granted = await requestNotificationPermissions();
   if (!granted) return null;
 
-  // Calcular fecha de disparo: 7 días después del inicio a las 9:00 AM
   const triggerDate = new Date(startDate);
   triggerDate.setDate(triggerDate.getDate() + 7);
   triggerDate.setHours(9, 0, 0, 0);
 
-  // Si la fecha ya pasó (ciclo retroactivo), disparar mañana a las 9 AM
   const now = new Date();
   if (triggerDate <= now) {
     triggerDate.setTime(now.getTime());
@@ -79,14 +59,11 @@ export async function scheduleWeeklyNotification(startDate) {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: '🌙 ¡Nueva semana, nueva rutina!',
-        body: 'Tu ciclo semanal terminó. Responde el cuestionario para ver si tu sueño mejoró y obtener una rutina actualizada.',
+        body: 'Tu ciclo semanal terminó. Responde el cuestionario para ver si tu sueño mejoró.',
         sound: true,
         data: { screen: 'Resumen' },
       },
-      trigger: {
-        date: triggerDate,
-        channelId: 'sleep-reminders',
-      },
+      trigger: { date: triggerDate, channelId: 'sleep-reminders' },
     });
 
     await saveNotifId(id);
@@ -98,12 +75,6 @@ export async function scheduleWeeklyNotification(startDate) {
   }
 }
 
-/**
- * Programa notificaciones diarias de recordatorio de registro de sueño.
- * Se disparan cada noche a las 9:00 PM durante los 7 días del ciclo.
- *
- * @param {Date} startDate - Fecha de inicio del ciclo actual
- */
 export async function scheduleDailyReminders(startDate) {
   const granted = await requestNotificationPermissions();
   if (!granted) return;
@@ -112,23 +83,19 @@ export async function scheduleDailyReminders(startDate) {
   for (let i = 0; i < 7; i++) {
     const triggerDate = new Date(startDate);
     triggerDate.setDate(triggerDate.getDate() + i);
-    triggerDate.setHours(21, 0, 0, 0); // 9 PM
+    triggerDate.setHours(21, 0, 0, 0);
 
-    // No programar si ya pasó
     if (triggerDate <= new Date()) continue;
 
     try {
       const id = await Notifications.scheduleNotificationAsync({
         content: {
           title: '😴 Hora de registrar tu sueño',
-          body: '¿Cuántas horas dormiste? Registra tu progreso de hoy en SleepApp.',
+          body: '¿Cuántas horas dormiste? Registra tu progreso de hoy.',
           sound: true,
           data: { screen: 'Progreso' },
         },
-        trigger: {
-          date: triggerDate,
-          channelId: 'sleep-reminders',
-        },
+        trigger: { date: triggerDate, channelId: 'sleep-reminders' },
       });
       ids.push(id);
     } catch (error) {
@@ -138,26 +105,15 @@ export async function scheduleDailyReminders(startDate) {
   return ids;
 }
 
-/**
- * Cancela la notificación semanal guardada.
- */
 export async function cancelWeeklyNotification() {
   const id = await loadNotifId();
-  if (id) {
-    await Notifications.cancelScheduledNotificationAsync(id);
-  }
+  if (id) await Notifications.cancelScheduledNotificationAsync(id);
 }
 
-/**
- * Cancela todas las notificaciones programadas.
- */
 export async function cancelAllNotifications() {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
 
-/**
- * Devuelve lista de notificaciones pendientes (útil para debug).
- */
 export async function getPendingNotifications() {
   return await Notifications.getAllScheduledNotificationsAsync();
 }
