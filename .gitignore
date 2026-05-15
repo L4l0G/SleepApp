@@ -5,7 +5,6 @@
 
 # Firebase credentials
 serviceAccountKey.json
-GoogleService-Info.plist
 
 # node_modules
 node_modules/
