@@ -1,6 +1,9 @@
 // src/utils/storage.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../config/firebase';
+import {
+  collection, doc, setDoc, getDoc, deleteDoc, getDocs
+} from 'firebase/firestore';
 
 const KEYS = {
   FORM:        'sleepapp_form',
@@ -13,10 +16,9 @@ const KEYS = {
   NOTIF_ID:    'sleepapp_notif_id',
 };
 
-// Ciclo semanal
 export const CYCLE_DAYS = 7;
 
-// ─── Utilidades locales (caché offline) ──────────────────────────────────────
+// ─── Utilidades locales ───────────────────────────────────────────────────────
 
 async function saveLocal(key, value) {
   try {
@@ -36,45 +38,37 @@ async function loadLocal(key, defaultValue) {
   }
 }
 
-// ─── Utilidades de Firebase ──────────────────────────────────────────────────
+// ─── Utilidades Firebase (v9 modular) ────────────────────────────────────────
 
 function getUserId() {
-  // En contexto real, esto vendría del usuario autenticado
-  // De momento retorna un ID genérico
-  return 'current_user';
+  const id = global.currentUserId || 'current_user';
+  console.log('🔑 UID actual:', id); // ← temporal para verificar, quitar después
+  return id;
 }
 
-async function saveToFirebase(collection, document, data) {
+function userDocRef(col, docId) {
+  return doc(db, 'users', getUserId(), col, docId);
+}
+
+async function saveToFirebase(col, docId, data) {
   try {
-    const userId = getUserId();
-    await db()
-      .collection('users')
-      .doc(userId)
-      .collection(collection)
-      .doc(document)
-      .set(data, { merge: true });
+    await setDoc(userDocRef(col, docId), data, { merge: true });
   } catch (err) {
     console.warn('Error al guardar en Firebase:', err);
   }
 }
 
-async function loadFromFirebase(collection, document) {
+async function loadFromFirebase(col, docId) {
   try {
-    const userId = getUserId();
-    const doc = await db()
-      .collection('users')
-      .doc(userId)
-      .collection(collection)
-      .doc(document)
-      .get();
-    return doc.exists ? doc.data() : null;
+    const snap = await getDoc(userDocRef(col, docId));
+    return snap.exists() ? snap.data() : null;
   } catch (err) {
     console.warn('Error al cargar desde Firebase:', err);
     return null;
   }
 }
 
-// ─── Funciones de formulario ──────────────────────────────────────────────────
+// ─── Formulario ───────────────────────────────────────────────────────────────
 
 export async function saveForm(form) {
   await saveLocal(KEYS.FORM, form);
@@ -82,7 +76,6 @@ export async function saveForm(form) {
 }
 
 export async function loadForm() {
-  // Intenta Firebase primero, falla a local
   const remote = await loadFromFirebase('data', 'form');
   if (remote?.form) {
     await saveLocal(KEYS.FORM, remote.form);
@@ -91,7 +84,7 @@ export async function loadForm() {
   return await loadLocal(KEYS.FORM, null);
 }
 
-// ─── Funciones de perfil ─────────────────────────────────────────────────────
+// ─── Perfil ───────────────────────────────────────────────────────────────────
 
 export async function savePerfil(perfil) {
   await saveLocal(KEYS.PERFIL, perfil);
@@ -121,7 +114,7 @@ export async function loadPrevPerfil() {
   return await loadLocal(KEYS.PREV_PERFIL, null);
 }
 
-// ─── Funciones de progreso ───────────────────────────────────────────────────
+// ─── Progreso ─────────────────────────────────────────────────────────────────
 
 export async function saveProgress(progress) {
   await saveLocal(KEYS.PROGRESS, progress);
@@ -134,11 +127,10 @@ export async function loadProgress() {
     await saveLocal(KEYS.PROGRESS, remote.progress);
     return remote.progress;
   }
-  const local = await loadLocal(KEYS.PROGRESS, new Array(CYCLE_DAYS).fill(false));
-  return local;
+  return await loadLocal(KEYS.PROGRESS, new Array(CYCLE_DAYS).fill(false));
 }
 
-// ─── Funciones de registro de sueño ──────────────────────────────────────────
+// ─── Sleep log ────────────────────────────────────────────────────────────────
 
 export async function saveSleepLog(log) {
   await saveLocal(KEYS.SLEEP_LOG, log);
@@ -151,11 +143,10 @@ export async function loadSleepLog() {
     await saveLocal(KEYS.SLEEP_LOG, remote.log);
     return remote.log;
   }
-  const local = await loadLocal(KEYS.SLEEP_LOG, new Array(CYCLE_DAYS).fill(null));
-  return local;
+  return await loadLocal(KEYS.SLEEP_LOG, new Array(CYCLE_DAYS).fill(null));
 }
 
-// ─── Funciones de fecha de inicio ────────────────────────────────────────────
+// ─── Fecha de inicio ──────────────────────────────────────────────────────────
 
 export async function saveStartDate(date) {
   await saveLocal(KEYS.START_DATE, date);
@@ -171,7 +162,7 @@ export async function loadStartDate() {
   return await loadLocal(KEYS.START_DATE, null);
 }
 
-// ─── Funciones de notificaciones ─────────────────────────────────────────────
+// ─── Notificaciones ───────────────────────────────────────────────────────────
 
 export async function saveNotifId(id) {
   await saveLocal(KEYS.NOTIF_ID, String(id));
@@ -179,26 +170,24 @@ export async function saveNotifId(id) {
 }
 
 export async function loadNotifId() {
+  const local = await loadLocal(KEYS.NOTIF_ID, null);
+  if (local) return local;
+
   const remote = await loadFromFirebase('data', 'notifId');
   if (remote?.id) {
     await saveLocal(KEYS.NOTIF_ID, remote.id);
     return remote.id;
   }
-  return await loadLocal(KEYS.NOTIF_ID, null);
+  return null;
 }
 
-// ─── Funciones de historial ──────────────────────────────────────────────────
+// ─── Historial ────────────────────────────────────────────────────────────────
 
 export async function appendHistory(entry) {
   const local = await loadLocal(KEYS.HISTORY, []);
   local.push(entry);
   await saveLocal(KEYS.HISTORY, local);
-  
-  // Guardar en Firebase como array
-  await saveToFirebase('data', 'history', {
-    entries: local,
-    timestamp: new Date(),
-  });
+  await saveToFirebase('data', 'history', { entries: local, timestamp: new Date() });
 }
 
 export async function loadHistory() {
@@ -210,24 +199,18 @@ export async function loadHistory() {
   return await loadLocal(KEYS.HISTORY, []);
 }
 
-// ─── Funciones de limpieza ───────────────────────────────────────────────────
+// ─── Limpieza ─────────────────────────────────────────────────────────────────
 
 export async function clearCurrentCycle() {
   await AsyncStorage.multiRemove([
-    KEYS.PROGRESS,
-    KEYS.SLEEP_LOG,
-    KEYS.START_DATE,
-    KEYS.PERFIL,
+    KEYS.PROGRESS, KEYS.SLEEP_LOG, KEYS.START_DATE, KEYS.PERFIL,
   ]);
-
-  // También limpiar en Firebase
   try {
     const userId = getUserId();
-    const ref = db().collection('users').doc(userId).collection('data');
-    await ref.doc('progress').delete();
-    await ref.doc('sleepLog').delete();
-    await ref.doc('startDate').delete();
-    await ref.doc('perfil').delete();
+    const dataCol = collection(db, 'users', userId, 'data');
+    for (const docId of ['progress', 'sleepLog', 'startDate', 'perfil']) {
+      await deleteDoc(doc(dataCol, docId));
+    }
   } catch (err) {
     console.warn('Error al limpiar Firebase:', err);
   }
@@ -235,26 +218,30 @@ export async function clearCurrentCycle() {
 
 export async function clearAll() {
   await AsyncStorage.multiRemove(Object.values(KEYS));
-
-  // También limpiar en Firebase
   try {
     const userId = getUserId();
-    const ref = db().collection('users').doc(userId).collection('data');
-    const docs = await ref.get();
-    docs.forEach(doc => doc.ref.delete());
+    const dataCol = collection(db, 'users', userId, 'data');
+    const docs = await getDocs(dataCol);
+    for (const d of docs.docs) {
+      await deleteDoc(d.ref);
+    }
   } catch (err) {
     console.warn('Error al limpiar Firebase:', err);
   }
 }
 
-// ─── Función para sincronizar con usuario autenticado ──────────────────────
+// storage.js — agregar esta función
+export async function clearLocalOnly() {
+  await AsyncStorage.multiRemove(Object.values(KEYS));
+}
+
+// ─── Usuario actual ───────────────────────────────────────────────────────────
 
 export function setCurrentUserId(userId) {
-  // Este sería llamado cuando el usuario inicia sesión
-  // Para poder sincronizar los datos con su UID real
   global.currentUserId = userId;
 }
 
 export function getCurrentUserId() {
   return global.currentUserId || 'current_user';
 }
+

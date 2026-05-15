@@ -1,6 +1,15 @@
 // src/context/AuthContext.js
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { auth } from '../config/firebase';
+import { setCurrentUserId, clearLocalOnly } from '../utils/storage';
+import {
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signInWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail,
+} from 'firebase/auth';
 
 export const AuthContext = createContext();
 
@@ -9,67 +18,68 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Verificar si hay usuario autenticado
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged(
-      (currentUser) => {
-        setUser(currentUser);
-        setLoading(false);
-      },
-      (err) => {
-        setError(err.message);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
+  const unsubscribe = onAuthStateChanged(
+    auth,
+    (currentUser) => {
+      setCurrentUserId(currentUser?.uid || null); // ← ya lo tienes, verifica que esté
+      setUser(currentUser);
+      setLoading(false);
+    },
+    (err) => {
+      setError(err.message);
+      setLoading(false);
+    }
+  );
+  return () => unsubscribe();
+}, []);
 
   const register = useCallback(async (email, password, displayName) => {
-    try {
-      setError(null);
-      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
-      
-      // Establecer nombre
-      await userCredential.user.updateProfile({
-        displayName: displayName,
-      });
+  try {
+    setError(null);
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(userCredential.user, { displayName });
+    setCurrentUserId(userCredential.user.uid);                    // ← establecer UID real
+    setUser(userCredential.user);
+    return userCredential.user;
+  } catch (err) {
+    setError(err.message);
+    throw err;
+  }
+}, []);
 
-      setUser(userCredential.user);
-      return userCredential.user;
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    }
-  }, []);
-
-  const login = useCallback(async (email, password) => {
-    try {
-      setError(null);
-      const userCredential = await auth().signInWithEmailAndPassword(email, password);
-      setUser(userCredential.user);
-      return userCredential.user;
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    }
-  }, []);
+  // AuthContext.js — función login
+const login = useCallback(async (email, password) => {
+  try {
+    setError(null);
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    setCurrentUserId(userCredential.user.uid); // ← UID primero
+    await clearLocalOnly();                    // ← solo limpia AsyncStorage
+    setUser(userCredential.user);
+    return userCredential.user;
+  } catch (err) {
+    setError(err.message);
+    throw err;
+  }
+}, []);
 
   const logout = useCallback(async () => {
-    try {
-      setError(null);
-      await auth().signOut();
-      setUser(null);
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    }
-  }, []);
+  try {
+    setError(null);
+    await signOut(auth);
+    await clearAll();                  // ← limpiar AsyncStorage
+    setCurrentUserId(null);           // ← limpiar UID global
+    setUser(null);
+  } catch (err) {
+    setError(err.message);
+    throw err;
+  }
+}, []);
 
   const resetPassword = useCallback(async (email) => {
     try {
       setError(null);
-      await auth().sendPasswordResetEmail(email);
+      await sendPasswordResetEmail(auth, email);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -94,7 +104,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-// Hook para usar el contexto
 export function useAuth() {
   const context = React.useContext(AuthContext);
   if (!context) {
@@ -102,3 +111,4 @@ export function useAuth() {
   }
   return context;
 }
+
